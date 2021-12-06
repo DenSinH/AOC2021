@@ -21,7 +21,7 @@ with open("input.txt", "r+") as f:
     for v, c in Counter(int(n) for n in f.readline().split(",")).most_common():
         input[v] = c
 
-# convert to vector of f_{k, n}s
+# convert to vector of f_{0, n - i}s
 F0 = np.roll(input[::-1], 1)
 F0[3:9] -= F0[1:7]
 F0[5:9] += F0[1:5]
