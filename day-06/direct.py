@@ -1,5 +1,6 @@
 import numpy as np
 from collections import Counter
+from decimal import Decimal
 
 np.set_printoptions(linewidth=999999)
 
@@ -33,4 +34,4 @@ Fn = (C @ (D ** 256) @ np.linalg.inv(C)).dot(F0)
 
 # convert back into f_{k, n}
 Fn[3:9] += Fn[1:7]
-print(round(np.sum(Fn).real))
+print(np.sum(Fn).real)
