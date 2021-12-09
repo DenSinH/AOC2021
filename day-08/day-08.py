@@ -61,7 +61,7 @@ for patterns, output in input:
             # only digits where a pattern has the right length are allowed
             candidates[digit] &= by_len[len(pattern)]
 
-    # just try all the leftover combinations
+    # just try all the leftover combinations (should only be about 128 it seems)
     for combination in combinations(candidates):
         # all the patterns must be valid digits
         if all({combination[l] for l in pattern} in digits for pattern in patterns + output):
