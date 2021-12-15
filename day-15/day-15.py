@@ -33,7 +33,7 @@ with open("input.txt", "r") as f:
 
 def solve(scale):
     # rough estimate for maximum possible distance
-    dist = scale * 9 * grid.size * np.ones((5 * grid.shape[0], 5 * grid.shape[1]), dtype=np.int32)
+    dist = scale * 9 * grid.size * np.ones((scale * grid.shape[0], scale * grid.shape[1]), dtype=np.int32)
     dist[0, 0] = 0
 
     def heuristic(x, y):
