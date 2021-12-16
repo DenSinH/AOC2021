@@ -1,4 +1,4 @@
-from functools import reduce
+from math import prod
 
 
 class Literal:
@@ -40,7 +40,7 @@ class Operator:
         """
         op = [
             sum,
-            lambda c: reduce(lambda x, y: x * y, c, 1),
+            prod,
             min,
             max,
             None,
@@ -51,56 +51,51 @@ class Operator:
         return op(child.eval() for child in self.children)
 
 
-def decode_message(message, is_hex=False):
-    if is_hex:
-        message = format(int(message, 16), f'0>{4 * len(message)}b')
+class Message:
 
-    return decode_packet(message, 0)[0]
-
-
-def decode_packet(message, index):
-    version = int(message[index:index + 3], 2)
-    index += 3
-    tid = int(message[index:index + 3], 2)
-    index += 3
-    if tid == 4:
-        number = 0
-        while True:
-            has_next = message[index] == "1"
-            number <<= 4
-            number |= int(message[index + 1:index + 5], 2)
-            index += 5
-            if not has_next:
-                break
-        return Literal(version, number), index
-    else:
-        children = []
-        length_id = message[index] == "1"
-        index += 1
-        if length_id:
-            # 11 bits length
-            length = int(message[index:index + 11], 2)
-            index += 11
-            for c in range(length):
-                child, index = decode_packet(message, index)
-                children.append(child)
+    def __init__(self, msg, is_hex=True):
+        if is_hex:
+            self.msg = format(int(msg, 16), f'0>{4 * len(message)}b')
         else:
-            # 15 bits length
-            length = int(message[index:index + 15], 2)
-            index += 15
-            length_found = 0
-            while length_found < length:
-                child, next_index = decode_packet(message, index)
-                length_found += next_index - index
-                index = next_index
-                children.append(child)
-        return Operator(version, tid, children), index
+            self.msg = msg
+        self.index = 0
+
+    def fetch(self, amount):
+        value = int(self.msg[self.index:self.index + amount], 2)
+        self.index += amount
+        return value
+
+    def packet(self):
+        version = self.fetch(3)
+        tid = self.fetch(3)
+        if tid == 4:
+            number = 0
+            while True:
+                has_next = self.fetch(1)
+                number <<= 4
+                number |= self.fetch(4)
+                if not has_next:
+                    return Literal(version, number)
+        else:
+            children = []
+            if self.fetch(1):
+                # 11 bits length
+                length = self.fetch(11)
+                for c in range(length):
+                    children.append(self.packet())
+            else:
+                # 15 bits length
+                length = self.fetch(15)
+                end = self.index + length
+                while self.index < end:
+                    children.append(self.packet())
+            return Operator(version, tid, children)
 
 
 if __name__ == '__main__':
     with open("input.txt", "r") as f:
         message = f.readline().strip()
 
-    decoded = decode_message(message, is_hex=True)
+    decoded = Message(message, is_hex=True).packet()
     print(decoded.version_sum())
     print(decoded.eval())
