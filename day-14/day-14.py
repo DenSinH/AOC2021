@@ -22,7 +22,7 @@ for part in (10, 30):
         count[pair[0]] += amount
         count[pair[1]] += amount
 
-    # correct for original input
+    # correct for original input.txt
     count[polymer[0]] += 1
     count[polymer[-1]] += 1
     print((max(count.values()) - min(count.values())) >> 1)
