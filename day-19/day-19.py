@@ -1,4 +1,6 @@
 import itertools as it
+from collections import Counter
+
 
 xflip = [
     lambda x, y, z: (x, y, z),
@@ -62,11 +64,27 @@ def translate(point, offset):
     return point[0] + offset[0], point[1] + offset[1], point[2] + offset[2]
 
 
+class Transformation:
+
+    def __init__(self, orientation, translation):
+        self.orientation = orientation
+        self.translation = translation
+
+    def __eq__(self, other):
+        return self.translation == other.translation and self.orientation == other.orientation
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        return hash(self.translation)
+
+
 scanners = []
 with open("input.txt", "r") as f:
     while f.readline():  # --- scanner x ---
         scanners.append(set())
-        while line := f.readline().strip():  # ends with blank like
+        while line := f.readline().strip():  # ends with blank line
             scanners[-1].add(eval(f"({line})"))
 
 scanner0 = scanners.pop(0)
@@ -74,6 +92,7 @@ beacons = set(scanner0)
 
 
 def scanner_correspondence(scanner):
+    transforms = Counter()
     for orientation in orientations:
         for beacon in scanner:
             permuted = orientation(*beacon)
@@ -83,10 +102,13 @@ def scanner_correspondence(scanner):
                     corresponding[1] - permuted[1],
                     corresponding[2] - permuted[2]
                 )
-                scanner_ = {translate(orientation(*b), translation) for b in scanner}
+                transforms[Transformation(orientation, translation)] += 1
 
-                if len(scanner_ & beacons) >= 12:
-                    return translation, scanner_
+    most_common = transforms.most_common(1)[0][0]
+    scanner_ = {translate(most_common.orientation(*b), most_common.translation) for b in scanner}
+
+    if len(scanner_ & beacons) >= 12:
+        return most_common.translation, scanner_
     return None, None
 
 
