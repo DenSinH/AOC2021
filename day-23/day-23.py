@@ -1,4 +1,5 @@
 from collections import defaultdict
+import numpy as np
 import heapq
 
 
@@ -22,74 +23,60 @@ class Pos:
         return hash(self.x) ^ hash(self.y)
 
     def __repr__(self):
-        return f"({self.x}, {self.y})"
+        return f"Pos({self.x}, {self.y})"
 
 
 class State:
 
-    ENERGY = {
-        "A": 1,
-        "B": 10,
-        "C": 100,
-        "D": 1000,
-    }
-    ROOM = {
-        "A": 2,
-        "B": 4,
-        "C": 6,
-        "D": 8,
-    }
-    ROOM_EXITS = set(ROOM.values())
+    ENERGY = [
+        None,
+        1,
+        10,
+        100,
+        1000,
+    ]
+    ROOM = [
+        None,
+        2,
+        4,
+        6,
+        8,
+    ]
+    ROOM_EXITS = set(ROOM[1:])
+    TILE = ".ABCD"
 
-    def __init__(self, A, B, C, D, energy=0):
-        self.A = tuple(A)
-        self.B = tuple(B)
-        self.C = tuple(C)
-        self.D = tuple(D)
+    def __init__(self, field, energy=0, num_pods=2):
+        self.field: np.array = field
+        self.num_pods = num_pods
         self.energy = energy
+        self._heuristic = None
 
     def pod_heuristic(self, pod, ptype):
-        if pod.y == 2:
-            if pod.x == State.ROOM[ptype]:
-                return 0
-            else:
-                spot_taken = self.spot_taken(Pos(pod.x, 1))
-                if spot_taken:
-                    return 2 * State.ENERGY[spot_taken] + (abs(State.ROOM[ptype] - pod.x) + 4) * State.ENERGY[ptype]
-                else:
-                    return (abs(State.ROOM[ptype] - pod.x) + 4) * State.ENERGY[ptype]
-        elif pod.y == 1:
-            if pod.x == State.ROOM[ptype]:
-                spot_taken = self.spot_taken(Pos(pod.x, 2))
-                if spot_taken:
-                    return 2 * State.ENERGY[spot_taken] + (abs(State.ROOM[ptype] - pod.x) + 4) * State.ENERGY[ptype]
-                else:
-                    return 0
-            else:
-                return (abs(State.ROOM[ptype] - pod.x) + 3) * State.ENERGY[ptype]
-        return (abs(State.ROOM[ptype] - pod.x) + 2) * State.ENERGY[ptype]
+        if pod.x != State.ROOM[ptype]:
+            if pod.y == 0:
+                return State.ENERGY[ptype]
+            return abs(State.ROOM[ptype] - pod.x + 2 + pod.y) * State.ENERGY[ptype]
+        return 0
 
     def heuristic(self):
-        return self.energy \
-               + sum(self.pod_heuristic(a, "A") for a in self.A) \
-               + sum(self.pod_heuristic(b, "B") for b in self.B) \
-               + sum(self.pod_heuristic(c, "C") for c in self.C) \
-               + sum(self.pod_heuristic(d, "D") for d in self.D)
+        if self._heuristic is None:
+            self._heuristic = self.energy + sum(self.pod_heuristic(pod, self.field[pod.x, pod.y]) for pod in self.pods())
+        return self._heuristic
 
     def __eq__(self, other):
-        return self.A == other.A and self.B == other.B and self.C == other.C and self.D == other.D
+        return np.all(self.field == other.field)
 
     def __lt__(self, other):
         return self.heuristic() < other.heuristic()
 
     def __hash__(self):
-        return hash(self.A) ^ hash(self.B) ^ hash(self.C) ^ hash(self.D)
+        return hash(self.field.tobytes())
 
     def __str__(self):
         field = "#############\n"
-        field += "#" + "".join(self.spot_taken(Pos(x, 0)) or "." for x in range(11)) + "#\n"
-        field += "###" + "#".join(self.spot_taken(Pos(State.ROOM[ptype], 1)) or "." for ptype in "ABCD") + "###\n"
-        field += "  #" + "#".join(self.spot_taken(Pos(State.ROOM[ptype], 2)) or "." for ptype in "ABCD") + "#\n"
+        field += "#" + "".join(State.TILE[self.spot_taken(Pos(x, 0))] for x in range(11)) + "#\n"
+        field += "###" + "#".join(State.TILE[self.spot_taken(Pos(State.ROOM[ptype], 1))] for ptype in [1, 2, 3, 4]) + "###\n"
+        field += "  #" + "#".join(State.TILE[self.spot_taken(Pos(State.ROOM[ptype], 2))] for ptype in [1, 2, 3, 4]) + "#\n"
         field += "  #########"
         return field
 
@@ -97,107 +84,106 @@ class State:
         return str(self)
 
     def is_done(self):
-        return {pos.y for pos in self.A} == {1, 2} \
-           and {pos.y for pos in self.B} == {1, 2} \
-           and {pos.y for pos in self.C} == {1, 2} \
-           and {pos.y for pos in self.D} == {1, 2}
+        return all(pod.x == State.ROOM[self.field[pod.x, pod.y]] for pod in self.pods())
 
     def spot_taken(self, pos):
-        if pos in self.A:
-            return "A"
-        elif pos in self.B:
-            return "B"
-        elif pos in self.C:
-            return "C"
-        elif pos in self.D:
-            return "D"
-        return None
+        return self.field[pos.x, pos.y]
 
     def move_pod(self, pod, ptype):
-        if pod.y == 2:
-            if pod.x != State.ROOM[ptype]:
-                if not self.spot_taken(Pos(pod.x, 1)):
-                    yield Pos(pod.x, 1), State.ENERGY[ptype]
-        elif pod.y == 1:
-            # move back into room
-            if pod.x == State.ROOM[ptype]:
-                if not self.spot_taken(Pos(pod.x, 2)):
-                    yield Pos(pod.x, 2), State.ENERGY[ptype]
-
+        if pod.y >= 1:
             # move out of room if we are not in the right room
             # or if there is a wrong pod in the back of our room
-            if pod.x != State.ROOM[ptype] or self.spot_taken(Pos(pod.x, 2)) != ptype:
+            if pod.x != State.ROOM[ptype] or \
+                    any((self.spot_taken(Pos(pod.x, pod.y + dy)) or ptype) != ptype for dy in range(1, 1 + self.num_pods - pod.y)):
+                # can't go out of room if any spot is taken
+                if any(self.spot_taken(Pos(pod.x, y)) for y in range(1, pod.y)):
+                    return
                 for dx in range(1, pod.x + 1):
                     if self.spot_taken(Pos(pod.x - dx, 0)):
                         break
                     if pod.x - dx not in State.ROOM_EXITS:
-                        yield Pos(pod.x - dx, 0), (1 + dx) * State.ENERGY[ptype]
+                        yield Pos(pod.x - dx, 0), (pod.y + dx) * State.ENERGY[ptype]
                 for dx in range(1, 1 + 10 - pod.x):
                     if self.spot_taken(Pos(pod.x + dx, 0)):
                         break
                     if pod.x + dx not in State.ROOM_EXITS:
-                        yield Pos(pod.x + dx, 0), (1 + dx) * State.ENERGY[ptype]
-        elif pod.y == 0:
+                        yield Pos(pod.x + dx, 0), (pod.y + dx) * State.ENERGY[ptype]
+        else:
             # move back into room if allowed
             # pods cannot stand in front of rooms anyway
             for x in range(min(pod.x, State.ROOM[ptype]) + 1, max(pod.x, State.ROOM[ptype])):
                 if self.spot_taken(Pos(x, 0)):
                     return
 
-            # cannot move into room
-            if self.spot_taken(Pos(State.ROOM[ptype], 1)):
+            # pod in room of wrong type
+            if any((self.spot_taken(Pos(State.ROOM[ptype], y)) or ptype) != ptype for y in range(1, self.num_pods + 1)):
                 return
 
-            # pod in room of wrong type
-            if (self.spot_taken(Pos(State.ROOM[ptype], 2)) or ptype) != ptype:
-                return
-            yield Pos(State.ROOM[ptype], 1), (abs(pod.x - State.ROOM[ptype]) + 1) * State.ENERGY[ptype]
+            # check how deep we can move into the room
+            for y in range(1, self.num_pods + 1):
+                if self.spot_taken(Pos(State.ROOM[ptype], y)):
+                    break
+            else:
+                y = self.num_pods + 1
+            if y > 1:
+                yield Pos(State.ROOM[ptype], y - 1), (abs(pod.x - State.ROOM[ptype]) + y - 1) * State.ENERGY[ptype]
+
+    def pods(self):
+        for x, y in zip(*np.nonzero(self.field)):
+            yield Pos(x, y)
 
     def moves(self):
-        for pod, energy in self.move_pod(self.A[0], "A"):
-            yield State((pod, self.A[1]), self.B, self.C, self.D, self.energy + energy)
-        for pod, energy in self.move_pod(self.A[1], "A"):
-            yield State((self.A[0], pod), self.B, self.C, self.D, self.energy + energy)
-        for pod, energy in self.move_pod(self.B[0], "B"):
-            yield State(self.A, (pod, self.B[1]), self.C, self.D, self.energy + energy)
-        for pod, energy in self.move_pod(self.B[1], "B"):
-            yield State(self.A, (self.B[0], pod), self.C, self.D, self.energy + energy)
-        for pod, energy in self.move_pod(self.C[0], "C"):
-            yield State(self.A, self.B, (pod, self.C[1]), self.D, self.energy + energy)
-        for pod, energy in self.move_pod(self.C[1], "C"):
-            yield State(self.A, self.B, (self.C[0], pod), self.D, self.energy + energy)
-        for pod, energy in self.move_pod(self.D[0], "D"):
-            yield State(self.A, self.B, self.C, (pod, self.D[1]), self.energy + energy)
-        for pod, energy in self.move_pod(self.D[1], "D"):
-            yield State(self.A, self.B, self.C, (self.D[0], pod), self.energy + energy)
+        for pod in self.pods():
+            for nxt, energy in self.move_pod(pod, self.field[pod.x, pod.y]):
+                new_field = np.array(self.field)
+                new_field[pod.x, pod.y] = 0
+                new_field[nxt.x, nxt.y] = self.field[pod.x, pod.y]
+                yield State(new_field, self.energy + energy, self.num_pods)
 
 
-state = defaultdict(list)
-for pod, room in zip(top, "ABCD"):
-    state[pod].append(Pos(State.ROOM[room], 1))
-for pod, room in zip(bottom, "ABCD"):
-    state[pod].append(Pos(State.ROOM[room], 2))
-start = State(**dict(state.items()))
+def solve(part):
+    state = defaultdict(list)
+    for pod, room in zip(top, [1, 2, 3, 4]):
+        state[pod].append(Pos(State.ROOM[room], 1))
+    for pod, room in zip(bottom, [1, 2, 3, 4]):
+        state[pod].append(Pos(State.ROOM[room], 2 if part == 1 else 4))
+    if part == 2:
+        state["A"].append(Pos(State.ROOM[4], 2))
+        state["A"].append(Pos(State.ROOM[3], 3))
+        state["B"].append(Pos(State.ROOM[2], 3))
+        state["B"].append(Pos(State.ROOM[3], 2))
+        state["C"].append(Pos(State.ROOM[4], 3))
+        state["C"].append(Pos(State.ROOM[2], 2))
+        state["D"].append(Pos(State.ROOM[1], 2))
+        state["D"].append(Pos(State.ROOM[1], 3))
 
-min_energy = float("inf")
-states = {start: start}
-todo = [(0, start)]
+    grid = np.zeros((11, 1 + 2 * part), dtype=np.int32)
+    for ptype, pods in state.items():
+        for pod in pods:
+            grid[pod.x, pod.y] = 1 + "ABCD".index(ptype)
 
-while todo:
-    print(len(todo), min_energy)
-    _, current = heapq.heappop(todo)
-    if current.energy > min_energy:
-        continue
+    start = State(grid, num_pods=2 * part)
 
-    for state in current.moves():
-        if state.is_done():
-            min_energy = min(min_energy, state.energy)
-            print(min_energy)
-        else:
-            if state in states:
-                if state.energy >= states[state].energy:
-                    continue
-            states[state] = state
-            heapq.heappush(todo, (state.heuristic(), state))
+    states = {start: start}
+    todo = [(0, start)]
 
-print(min_energy)
+    while todo:
+        h, current = heapq.heappop(todo)
+        if current.energy > states[current].energy:
+            continue
+
+        for state in current.moves():
+            if state.is_done():
+                return state.energy
+            else:
+                if state in states:
+                    if state.energy >= states[state].energy:
+                        continue
+                states[state] = state
+                heapq.heappush(todo, (state.heuristic(), state))
+
+    return float("inf")
+
+
+print(solve(1))
+print(solve(2))
